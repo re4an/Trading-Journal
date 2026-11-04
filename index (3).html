@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Journal</title>
+<style>
+:root{--bg:#eef1f4;--panel:#fff;--ink:#14202b;--mute:#66727e;--line:#d9dfe5;--gain:#0f7b5f;--loss:#c23b3b;--accent:#2b4c7e;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#10161c;--panel:#18212a;--ink:#e6ecf1;--mute:#8d9aa6;--line:#2a3541;--gain:#3cc6a0;--loss:#f0716f;--accent:#7ba3dd;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:880px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0}
+h2{font-size:16px;margin:0 0 10px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:14px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+.bar small{color:var(--mute)}
+input,select,textarea,button{font:inherit;color:inherit}
+input,select,textarea{width:100%;padding:9px 10px;background:var(--bg);border:1px solid var(--line);border-radius:6px}
+button{padding:9px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{background:none;color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+label{display:block;font-size:13px;color:var(--mute)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:13px;color:var(--mute)}
+.gain{color:var(--gain)}.loss{color:var(--loss)}
+.wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;white-space:nowrap}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--mute);font-weight:500;font-size:13px}
+#chart{width:100%;height:200px;display:block}
+.msg{min-height:20px;font-size:13px;color:var(--loss);margin:8px 0 0}
+.empty{color:var(--mute);text-align:center;padding:18px 0}
+.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<main id="auth" hidden>
+  <div class="panel" style="max-width:380px;margin:8vh auto 0">
+    <h1>Trading Journal</h1>
+    <p style="color:var(--mute)">Log in to see your own private journal.</p>
+    <label>Email<input id="email" type="email" autocomplete="email"></label>
+    <label style="margin-top:10px">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <div class="row">
+      <button id="login">Log in</button>
+      <button id="signup" class="ghost">Create account</button>
+    </div>
+    <p class="msg" id="authMsg"></p>
+  </div>
+</main>
+
+<main id="app" hidden>
+  <div class="bar">
+    <div><h1>Trading Journal</h1><small id="who"></small></div>
+    <button id="logout" class="ghost">Log out</button>
+  </div>
+
+  <div class="panel stats" id="stats"></div>
+
+  <div class="panel">
+    <h2>Equity curve</h2>
+    <svg id="chart" viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Cumulative profit and loss"></svg>
+  </div>
+
+  <div class="panel">
+    <h2>Add a trade</h2>
+    <div class="grid">
+      <label>Date<input id="f_date" type="date"></label>
+      <label>Symbol<input id="f_symbol" placeholder="GC, NQ, AAPL"></label>
+      <label>Side<select id="f_side"><option value="long">Long</option><option value="short">Short</option></select></label>
+      <label>Entry<input id="f_entry" type="number" step="any" inputmode="decimal"></label>
+      <label>Exit<input id="f_exit" type="number" step="any" inputmode="decimal"></label>
+      <label>Quantity<input id="f_qty" type="number" step="any" inputmode="decimal" value="1"></label>
+      <label>Fees<input id="f_fees" type="number" step="any" inputmode="decimal" value="0"></label>
+    </div>
+    <label style="margin-top:10px">Notes<textarea id="f_notes" rows="2" placeholder="Setup, mistakes, what you would repeat"></textarea></label>
+    <div class="row"><button id="add">Save trade</button></div>
+    <p class="msg" id="addMsg"></p>
+  </div>
+
+  <div class="panel">
+    <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">Trades</h2><button id="csv" class="ghost">Export CSV</button></div>
+    <div class="wrap"><table>
+      <thead><tr><th>Date</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>P&amp;L</th><th>Notes</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <div class="empty" id="empty" hidden>No trades yet. Add your first one above.</div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// 1) Paste your own values here (Supabase > Project Settings > API).
+//    Use the anon public key only. NEVER paste the service_role key.
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+let trades = [];
+let user = null;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = n => (n < 0 ? "-" : "") + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const pnl = t => (t.side === "long" ? t.exit_price - t.entry_price : t.entry_price - t.exit_price) * t.qty - t.fees;
+
+function show(loggedIn) {
+  $("auth").hidden = loggedIn;
+  $("app").hidden = !loggedIn;
+}
+
+async function boot() {
+  $("f_date").valueAsDate = new Date();
+  const { data } = await db.auth.getSession();
+  await setUser(data.session?.user ?? null);
+  db.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null));
+}
+
+async function setUser(u) {
+  if (u?.id === user?.id) return;
+  user = u;
+  show(!!u);
+  if (u) { $("who").textContent = u.email; await load(); }
+  else { trades = []; }
+}
+
+async function auth(kind) {
+  $("authMsg").textContent = "";
+  const email = $("email").value.trim(), password = $("password").value;
+  if (!email || password.length < 6) { $("authMsg").textContent = "Enter an email and a password of at least 6 characters."; return; }
+  const { data, error } = kind === "login"
+    ? await db.auth.signInWithPassword({ email, password })
+    : await db.auth.signUp({ email, password });
+  if (error) { $("authMsg").textContent = error.message; return; }
+  if (kind === "signup" && !data.session) $("authMsg").textContent = "Check your email to confirm your account, then log in.";
+}
+
+async function load() {
+  const { data, error } = await db.from("trades").select("*").order("trade_date").order("created_at");
+  if (error) { $("addMsg").textContent = error.message; return; }
+  trades = data;
+  render();
+}
+
+function render() {
+  const pl = trades.map(pnl);
+  const wins = pl.filter(x => x > 0), losses = pl.filter(x => x < 0);
+  const total = pl.reduce((a, b) => a + b, 0);
+  const gross = wins.reduce((a, b) => a + b, 0), lost = Math.abs(losses.reduce((a, b) => a + b, 0));
+  const stat = (label, val, cls = "") => `<div class="stat"><b class="${cls}">${val}</b><span>${label}</span></div>`;
+  $("stats").innerHTML =
+    stat("Net P&L", money(total), total >= 0 ? "gain" : "loss") +
+    stat("Trades", trades.length) +
+    stat("Win rate", trades.length ? Math.round(wins.length / trades.length * 100) + "%" : "-") +
+    stat("Avg win", wins.length ? money(gross / wins.length) : "-", "gain") +
+    stat("Avg loss", losses.length ? money(-lost / losses.length) : "-", "loss") +
+    stat("Profit factor", lost ? (gross / lost).toFixed(2) : (gross ? "∞" : "-"));
+
+  $("empty").hidden = trades.length > 0;
+  $("rows").innerHTML = trades.slice().reverse().map(t => {
+    const p = pnl(t);
+    return `<tr><td>${esc(t.trade_date)}</td><td>${esc(t.symbol)}</td><td>${esc(t.side)}</td><td>${t.entry_price}</td><td>${t.exit_price}</td><td>${t.qty}</td>
+      <td class="${p >= 0 ? "gain" : "loss"}">${money(p)}</td><td>${esc(t.notes)}</td>
+      <td><button class="ghost" data-del="${esc(t.id)}" aria-label="Delete trade">Delete</button></td></tr>`;
+  }).join("");
+  drawChart(pl);
+}
+
+function drawChart(pl) {
+  const svg = $("chart");
+  if (!pl.length) { svg.innerHTML = ""; return; }
+  let run = 0;
+  const pts = [0, ...pl.map(x => (run += x))];
+  const min = Math.min(...pts), max = Math.max(...pts), span = max - min || 1;
+  const X = i => pts.length === 1 ? 0 : i / (pts.length - 1) * 600;
+  const Y = v => 190 - (v - min) / span * 180;
+  const line = pts.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const color = run >= 0 ? "var(--gain)" : "var(--loss)";
+  svg.innerHTML =
+    `<line x1="0" x2="600" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--line)" stroke-dasharray="4 4"/>` +
+    `<polyline points="${line}" fill="none" stroke="${color}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
+}
+
+async function addTrade() {
+  $("addMsg").textContent = "";
+  const t = {
+    trade_date: $("f_date").value,
+    symbol: $("f_symbol").value.trim().toUpperCase(),
+    side: $("f_side").value,
+    entry_price: parseFloat($("f_entry").value),
+    exit_price: parseFloat($("f_exit").value),
+    qty: parseFloat($("f_qty").value),
+    fees: parseFloat($("f_fees").value) || 0,
+    notes: $("f_notes").value.trim() || null
+  };
+  if (!t.trade_date || !t.symbol || [t.entry_price, t.exit_price, t.qty].some(isNaN)) {
+    $("addMsg").textContent = "Fill in date, symbol, entry, exit and quantity."; return;
+  }
+  const { error } = await db.from("trades").insert(t);
+  if (error) { $("addMsg").textContent = error.message; return; }
+  ["f_symbol", "f_entry", "f_exit", "f_notes"].forEach(id => $(id).value = "");
+  await load();
+}
+
+async function del(id) {
+  if (!confirm("Delete this trade?")) return;
+  const { error } = await db.from("trades").delete().eq("id", id);
+  if (error) { $("addMsg").textContent = error.message; return; }
+  await load();
+}
+
+function exportCsv() {
+  const head = ["date", "symbol", "side", "entry", "exit", "qty", "fees", "pnl", "notes"];
+  const cell = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = trades.map(t => [t.trade_date, t.symbol, t.side, t.entry_price, t.exit_price, t.qty, t.fees, pnl(t).toFixed(2), t.notes].map(cell).join(","));
+  const blob = new Blob([[head.join(","), ...rows].join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "trades.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$("login").onclick = () => auth("login");
+$("signup").onclick = () => auth("signup");
+$("logout").onclick = () => db.auth.signOut();
+$("add").onclick = addTrade;
+$("csv").onclick = exportCsv;
+$("rows").onclick = e => { const id = e.target.dataset.del; if (id) del(id); };
+boot();
+</script>
+</body>
+</html>
