@@ -2,7 +2,7 @@
 
 A simple web app to log trades and track performance. Login and cloud sync, with a private journal for every user.
 
-Live demo: <tradingjournal.netlify.app>
+Live demo: https://tradingjournal.netlify.app
 
 ## Features
 - Log trades: date, symbol, long/short, entry, exit, quantity, fees, notes
